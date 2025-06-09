@@ -18,6 +18,7 @@ namespace evc
 
 	SReservedWord reservedWords[] =
 	{
+		{"meshfile", TOK_MESHFILE},
 		{"#if", IF },
 		{"#elif", IF },
 		{"#else", ELSE },

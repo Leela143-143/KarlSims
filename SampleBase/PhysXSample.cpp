@@ -71,6 +71,16 @@
 
 #include "Picking.h"
 #include "TestGroup.h"
+#include "cooking/PxCooking.h"
+
+#ifndef TINYOBJLOADER_IMPLEMENTATION
+#define TINYOBJLOADER_IMPLEMENTATION
+#endif
+#include "tiny_obj_loader.h" // Relies on include path set in project
+
+#include <iostream>
+#include <vector>
+#include <string> // Required for std::string
  
 
 using namespace SampleFramework;   
@@ -3102,3 +3112,236 @@ void PhysXSample::project(const PxVec3& v, int& x, int& y, float& depth)
 
 #endif // PX_USE_PARTICLE_SYSTEM_API
 
+PxRigidDynamic* PhysXSample::createMeshFromObj(
+    const PxTransform& pose,
+    const char* objFilePath,
+    const PxVec3& scale,
+    const PxVec3* linVel,
+    RenderMaterial* objMaterial,
+    PxReal density,
+    bool isKinematic,
+    PxPhysics* physicsOverride,
+    PxCooking* cookingOverride
+)
+{
+    PxPhysics* currentPhysics = physicsOverride ? physicsOverride : mPhysics;
+    PxCooking* currentCooking = cookingOverride ? cookingOverride : mCooking;
+
+    if (!currentPhysics || !currentCooking) {
+        std::cerr << "PhysXSample::createMeshFromObj: Physics or Cooking not initialized!" << std::endl;
+        return nullptr;
+    }
+
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> obj_materials;
+    std::string warn, err;
+
+    std::string fullPath = getSampleOutputDirManager().getFilePath(objFilePath);
+    if (fullPath.empty() && objFilePath && strlen(objFilePath) > 0) {
+        // Fallback: if getSampleOutputDirManager().getFilePath() returns empty (e.g. file not found with that manager)
+        // or if objFilePath is a direct path, try using objFilePath directly.
+        // This part is tricky as asset path resolution can be complex.
+        // A robust solution would involve checking mApplication.getAssetPath(objFilePath) or similar.
+        // For now, we try the direct path if the manager fails.
+        fullPath = objFilePath;
+    }
+    if (fullPath.empty()){
+            std::cerr << "TinyObjLoader: Empty file path provided." << std::endl;
+            return nullptr;
+    }
+
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &obj_materials, &warn, &err, fullPath.c_str())) {
+        std::cerr << "TinyObjLoader: Failed to load " << fullPath << " (Warn: " << warn << ", Err: " << err << ")" << std::endl;
+        return nullptr;
+    }
+    if (!warn.empty()) {
+        std::cout << "TinyObjLoader Warning for " << fullPath << ": " << warn << std::endl;
+    }
+
+    if (shapes.empty()) {
+        std::cerr << "No shapes found in OBJ file: " << fullPath << std::endl;
+        return nullptr;
+    }
+
+    std::vector<PxVec3> pxVertices;
+    std::vector<PxU32> pxIndices;
+    std::vector<PxVec3> pxNormals;
+
+    for (const auto& shape : shapes) {
+        size_t index_offset = 0;
+        for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); ++f) {
+            int fv = shape.mesh.num_face_vertices[f];
+            if (fv != 3) {
+                index_offset += fv;
+                continue;
+            }
+            for (size_t v = 0; v < fv; ++v) {
+                tinyobj::index_t idx = shape.mesh.indices[index_offset + v];
+                if (3 * idx.vertex_index + 2 >= attrib.vertices.size()) { // Bounds check
+                        std::cerr << "Vertex index out of bounds in " << fullPath << std::endl;
+                        // Skip this vertex or face? For now, skip vertex by not pushing, may lead to incomplete face
+                        continue;
+                }
+                pxVertices.push_back(PxVec3(
+                    attrib.vertices[3 * idx.vertex_index + 0] * scale.x,
+                    attrib.vertices[3 * idx.vertex_index + 1] * scale.y,
+                    attrib.vertices[3 * idx.vertex_index + 2] * scale.z
+                ));
+
+                if (idx.normal_index >= 0 && (3 * idx.normal_index + 2) < attrib.normals.size()) {
+                    pxNormals.push_back(PxVec3(
+                        attrib.normals[3 * idx.normal_index + 0],
+                        attrib.normals[3 * idx.normal_index + 1],
+                        attrib.normals[3 * idx.normal_index + 2]
+                    ));
+                } else {
+                    pxNormals.push_back(PxVec3(0,1,0));
+                }
+                pxIndices.push_back(static_cast<PxU32>(pxVertices.size() - 1));
+            }
+            index_offset += fv;
+        }
+    }
+
+    if (pxVertices.empty() || pxIndices.empty() || (pxIndices.size() % 3 != 0) ) { // Indices must form triangles
+        std::cerr << "No valid triangle data extracted or data is malformed from OBJ: " << fullPath << std::endl;
+        return nullptr;
+    }
+        if (pxNormals.size() != pxVertices.size()){ // Should not happen with current logic
+            std::cerr << "Normal count " << pxNormals.size() << " mismatch with vertex count " << pxVertices.size() << ". This is unexpected." << std::endl;
+            return nullptr;
+    }
+
+
+    SampleRenderer::Renderer* renderer = getRenderer();
+    SampleRenderer::RendererMesh* renderMesh = nullptr;
+    SampleRenderer::RendererVertexBuffer* vbPos = nullptr;
+    SampleRenderer::RendererVertexBuffer* vbNorm = nullptr;
+    SampleRenderer::RendererIndexBuffer* ib = nullptr;
+
+    if (renderer) {
+        SampleRenderer::RendererVertexBufferDesc vbPosDesc;
+        vbPosDesc.hint = SampleRenderer::RendererVertexBuffer::HINT_STATIC;
+        vbPosDesc.semantic = SampleRenderer::RendererVertexBuffer::SEMANTIC_POSITION;
+        vbPosDesc.format = SampleRenderer::RendererVertexBuffer::FORMAT_FLOAT3;
+        vbPosDesc.maxVertices = pxVertices.size();
+        vbPos = renderer->createVertexBuffer(vbPosDesc);
+        if (vbPos) vbPos->write(pxVertices.data(), 0, pxVertices.size()); else { std::cerr << "Failed to create VB Pos" << std::endl; return nullptr; }
+
+
+        if (!pxNormals.empty()) {
+            SampleRenderer::RendererVertexBufferDesc vbNormDesc;
+            vbNormDesc.hint = SampleRenderer::RendererVertexBuffer::HINT_STATIC;
+            vbNormDesc.semantic = SampleRenderer::RendererVertexBuffer::SEMANTIC_NORMAL;
+            vbNormDesc.format = SampleRenderer::RendererVertexBuffer::FORMAT_FLOAT3;
+            vbNormDesc.maxVertices = pxNormals.size();
+            vbNorm = renderer->createVertexBuffer(vbNormDesc);
+            if (vbNorm) vbNorm->write(pxNormals.data(), 0, pxNormals.size()); else { std::cerr << "Failed to create VB Norm" << std::endl; if(vbPos)renderer->releaseVertexBuffer(*vbPos); return nullptr;}
+        }
+
+        SampleRenderer::RendererIndexBufferDesc ibDesc;
+        ibDesc.hint = SampleRenderer::RendererIndexBuffer::HINT_STATIC;
+        ibDesc.format = SampleRenderer::RendererIndexBuffer::FORMAT_UINT32;
+        ibDesc.maxIndices = pxIndices.size();
+        ib = renderer->createIndexBuffer(ibDesc);
+        if (ib) ib->write(pxIndices.data(), 0, pxIndices.size()); else {std::cerr << "Failed to create IB" << std::endl; if(vbPos)renderer->releaseVertexBuffer(*vbPos); if(vbNorm)renderer->releaseVertexBuffer(*vbNorm); return nullptr;}
+
+        SampleRenderer::RendererMeshDesc meshDescRenderer;
+        meshDescRenderer.primitives = SampleRenderer::RendererMesh::PRIMITIVE_TRIANGLES;
+
+        SampleRenderer::RendererVertexBuffer* vbs[2]; // Max 2 VBs: Pos, Norm
+        vbs[0] = vbPos;
+        meshDescRenderer.vertexBuffers = vbs;
+        meshDescRenderer.numVertexBuffers = 1;
+        if(vbNorm){ // Only add normal VB if it was created
+            vbs[1] = vbNorm;
+            meshDescRenderer.numVertexBuffers = 2;
+        }
+
+        meshDescRenderer.indexBuffer = ib;
+        meshDescRenderer.numVertices = pxVertices.size();
+        meshDescRenderer.numIndices = pxIndices.size();
+        meshDescRenderer.firstIndex = 0;
+        meshDescRenderer.firstVertex = 0;
+
+        renderMesh = renderer->createMesh(meshDescRenderer);
+    }
+
+    if (!renderMesh) {
+        std::cerr << "Failed to create RendererMesh for " << fullPath << std::endl;
+        if(vbPos) renderer->releaseVertexBuffer(*vbPos);
+        if(vbNorm) renderer->releaseVertexBuffer(*vbNorm);
+        if(ib) renderer->releaseIndexBuffer(*ib);
+        return nullptr;
+    }
+
+    PxMaterial* physxActorMaterial = mMaterial;
+    PxTriangleMeshDesc physxMeshDesc;
+    physxMeshDesc.points.count = pxVertices.size();
+    physxMeshDesc.points.stride = sizeof(PxVec3);
+    physxMeshDesc.points.data = pxVertices.data();
+    physxMeshDesc.triangles.count = pxIndices.size() / 3;
+    physxMeshDesc.triangles.stride = 3 * sizeof(PxU32);
+    physxMeshDesc.triangles.data = pxIndices.data();
+
+    PxDefaultMemoryOutputStream writeBuffer;
+    bool status = currentCooking->cookTriangleMesh(physxMeshDesc, writeBuffer);
+    if (!status) {
+        std::cerr << "Failed to cook triangle mesh for " << fullPath << std::endl;
+        renderer->releaseMesh(*renderMesh);
+        return nullptr;
+    }
+
+    PxDefaultMemoryInputData readBuffer(writeBuffer.getData(), writeBuffer.getSize());
+    PxTriangleMesh* triMesh = currentPhysics->createTriangleMesh(readBuffer);
+
+    if (!triMesh) {
+        std::cerr << "Failed to create PxTriangleMesh for " << fullPath << std::endl;
+        renderer->releaseMesh(*renderMesh);
+        return nullptr;
+    }
+
+    PxShape* shape = currentPhysics->createShape(PxTriangleMeshGeometry(triMesh), *physxActorMaterial, true);
+    if (!shape) {
+            std::cerr << "Failed to create PxShape for " << fullPath << std::endl;
+            triMesh->release();
+            renderer->releaseMesh(*renderMesh);
+            return nullptr;
+    }
+
+    PxRigidDynamic* actor = currentPhysics->createRigidDynamic(pose);
+    if (!actor) {
+        shape->release();
+        triMesh->release();
+        renderer->releaseMesh(*renderMesh);
+        std::cerr << "Failed to create PxRigidDynamic for " << fullPath << std::endl;
+        return nullptr;
+    }
+
+    actor->attachShape(*shape);
+    if (!isKinematic && density > 0.0f) { // Ensure density is positive for dynamic bodies
+        PxRigidBodyExt::updateMassAndInertia(*actor, density);
+    } else if (isKinematic) {
+        actor->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, true);
+    } else { // density is zero or negative, make it static or default kinematic
+            actor->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, true); // Default to kinematic if density is not appropriate for dynamic
+    }
+
+    if (linVel && !isKinematic && density > 0.0f) actor->setLinearVelocity(*linVel);
+
+    shape->release();
+    triMesh->release();
+
+    RenderMaterial* usedMaterial = objMaterial ? objMaterial : getMaterial(MATERIAL_GREY);
+    RenderMeshActor* renderActor = SAMPLE_NEW(RenderMeshActor)(*renderer, renderMesh, usedMaterial);
+
+    link(renderActor, actor->getShape(0), actor);
+    mPhysicsActors.push_back(actor);
+    addRenderObject(renderActor);
+    if (mScene) mScene->addActor(*actor); else { std::cerr << "mScene is null, actor not added to scene." << std::endl; /* actor will be orphaned */ }
+
+
+    return actor;
+}

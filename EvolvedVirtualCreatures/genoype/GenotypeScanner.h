@@ -16,6 +16,7 @@ namespace evc { namespace genotype_parser {
 		LBRACE/*{*/, RBRACE/*}*/, 
 		LBRACKET/* [ */, RBRACKET/* ] */, 
 		DOT, COMMA, COLON, SEMICOLON,
+		TOK_MESHFILE,	// meshfile
 		PLUS, MINUS, TIMES, DIV, REMAINDER, REF, ARROW, INC, DEC,
 		LT/* < */, RT/* > */, LTEQ/* <= */, RTEQ/* >= */, NEQ/* != */, EQ/* == */, LOGIC_OR/* | */, OR/* || */, AND/* && */, NEG/* ! */, SCOPE/*::*/,
 
@@ -117,6 +118,7 @@ namespace evc { namespace genotype_parser {
 		SVec3 randShape;
 		SVec3 material;
 		float mass;
+		std::string meshFilePath;
 		SConnectionList *connection;
 		int refCount;
 		bool isSensor; // set by inner process
@@ -125,6 +127,7 @@ namespace evc { namespace genotype_parser {
 			mass = 1.f;
 			randShape = SVec3(0,0,0);
 			material = SVec3(0,0.75f,0);
+			meshFilePath = "";
 			connection = NULL;
 			isSensor = false;
 		}
@@ -138,6 +141,7 @@ namespace evc { namespace genotype_parser {
 				randShape = rhs.randShape;
 				material = rhs.material;
 				mass = rhs.mass;
+				meshFilePath = rhs.meshFilePath;
 				//connection = NULL;
 				isSensor = rhs.isSensor;
 			}

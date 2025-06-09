@@ -167,6 +167,10 @@ void CEvc::onInit()
 	points.push_back( PxVec3(4,0,0) );
 	points.push_back( PxVec3(4,0,0) );
 
+	// Create creature for testing custom mesh loading
+	PxVec3 pos(0.0f, 2.0f, 0.0f); // Initial position slightly above ground
+	m_Creatures.push_back(new CCreature(*this));
+	m_Creatures.back()->GenerateImmediate("genotype_custom_mesh_creature.txt", pos, NULL, 2);
 }
 
 

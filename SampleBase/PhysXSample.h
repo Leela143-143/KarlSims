@@ -33,6 +33,7 @@
 #include "SampleDirManager.h"
 #include "PxPhysicsAPI.h"
 #include "extensions/PxExtensionsAPI.h"
+#include "extensions/PxDefaultStreams.h" // For PxDefaultFileInputDataStream
 #include "RenderParticleSystemActor.h"
 #include "RenderClothActor.h"
 
@@ -115,6 +116,17 @@ public:
 					PxRigidDynamic*							createConvex(const PxVec3& pos, const PxVec3* linVel=NULL, RenderMaterial* material=NULL, PxReal density=1.0f);
 					PxRigidDynamic*							createCompound(const PxVec3& pos, const std::vector<PxTransform>& localPoses, const std::vector<const PxGeometry*>& geometries, const PxVec3* linVel=NULL, RenderMaterial* material=NULL, PxReal density=1.0f);
 					PxRigidDynamic*							createTestCompound(const PxVec3& pos, PxU32 nbBoxes, float boxSize, float amplitude, const PxVec3* linVel, RenderMaterial* material, PxReal density, bool makeSureVolumeEmpty = false);
+					PxRigidDynamic* createMeshFromObj(
+            const PxTransform& pose,
+            const char* objFilePath,
+            const PxVec3& scale,
+            const PxVec3* linVel,
+            RenderMaterial* material,
+            PxReal density,
+            bool isKinematic = false,
+            PxPhysics* physics = nullptr,
+            PxCooking* cooking = nullptr
+        );
 #if PX_USE_PARTICLE_SYSTEM_API
 					RenderParticleSystemActor*				createRenderObjectFromParticleSystem(ParticleSystem& ps, RenderMaterial* material = NULL, 
 																bool useMeshInstancing = false, bool useFading = false, PxReal fadingPeriod = 1.0f, PxReal instancingScale = 1.0f);

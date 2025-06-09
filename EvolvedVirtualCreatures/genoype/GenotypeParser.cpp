@@ -2,6 +2,7 @@
 #include "stdafx.h"
 #include "GenotypeParser.h"
 #include <iostream>
+#include <string>
 
 using namespace evc;
 using namespace evc::genotype_parser;
@@ -105,6 +106,7 @@ SExpr* genotype_parser::CGenotypeParser::expression()
 		pexpr->refCount = 0;
 		pexpr->connection = NULL;
 		pexpr->randShape = SVec3(0,0,0);
+		pexpr->meshFilePath = "";
 
 		pexpr->id = id();
 		Match(LPAREN);
@@ -128,6 +130,20 @@ SExpr* genotype_parser::CGenotypeParser::expression()
 		if (COMMA == m_Token)
 			Match(COMMA);
 		pexpr->randShape = randshape();
+
+		if (COMMA == m_Token) // check for meshfile attribute
+			Match(COMMA);
+
+		if (m_Token == TOK_MESHFILE) {
+			Match(TOK_MESHFILE);
+			if (m_Token == STRING) {
+				pexpr->meshFilePath = m_pScan->GetTokenStringQ(0);
+				Match(STRING);
+			}
+			else {
+				SyntaxError("Expected string (file path) after 'meshfile' keyword");
+			}
+		}
 
 		if (COMMA == m_Token)
 			Match(COMMA);

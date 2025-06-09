@@ -1,0 +1,26 @@
+// genotype_custom_mesh_creature.txt
+// Test creature with a custom mesh limb.
+
+RootPart (
+    shape box,
+    dimension (0.5, 0.5, 0.5),
+    material (0.3, 0.3, 0.3),
+    mass 0,
+    connection (
+        joint (
+            id CustomLimb1,
+            type spherical,
+            orient (0, 0.25, 0),
+            limit (0.785, 0.785, 0),
+            randpos (0,0,0)
+        )
+    )
+);
+
+CustomLimb1 (
+    shape box,
+    meshfile "resource/custom_limb_tri.obj",
+    dimension (1, 1, 1),
+    material (0.2, 0.6, 0.2),
+    mass 1
+);

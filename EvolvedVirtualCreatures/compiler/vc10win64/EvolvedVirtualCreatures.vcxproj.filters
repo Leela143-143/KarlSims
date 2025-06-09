@@ -103,6 +103,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\stdafx.h" />
+    <ClInclude Include="..\..\extern\tinyobjloader\tiny_obj_loader.h">
+      <Filter>Extern\tinyobjloader</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\extern\tinyobjloader\tiny_obj_loader.cc">
+      <Filter>Extern\tinyobjloader</Filter>
+    </ClCompile>
     <ClInclude Include="..\..\targetver.h" />
     <ClInclude Include="..\..\EvolvedVirtualCreatures.h" />
     <ClInclude Include="..\..\genoype\GenotypeParser.h">
@@ -239,6 +245,12 @@
     </Filter>
     <Filter Include="Event">
       <UniqueIdentifier>{75fb8031-d78e-4f9a-8b13-d7b4228d08b8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Extern">
+      <UniqueIdentifier>{a3599519-269c-4eaa-8320-890943ac109d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Extern\tinyobjloader">
+      <UniqueIdentifier>{f06f3ff0-9734-4621-9b81-494278e9b302}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

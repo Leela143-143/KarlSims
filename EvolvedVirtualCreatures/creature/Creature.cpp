@@ -324,22 +324,68 @@ CPhenotypeNode* CCreature::CreateBody(const genotype_parser::SExpr *expr, const 
 	pNode->m_MaterialDiffuse = PxVec3(expr->material.x, expr->material.y, expr->material.z);
 	const float mass = expr->mass;
 
-	if (boost::iequals(expr->shape, "box"))
-	{
-		pNode->m_pBody = m_sample.createBox(pos, dimension, linVel, material, mass);
-	}
-	else if (boost::iequals(expr->shape, "sphere"))
-	{
-		pNode->m_pBody = m_sample.createSphere(pos, dimension.x, linVel, material, mass);
-	}
-	else if (boost::iequals(expr->shape, "root"))
-	{ // root node size 0.1, 0.1, 0.1
-		//pos = PxVec3(pos.x,pos.y,pos.z);
-		//dimension = PxVec3(0.1f,0.1f,0.1f);
-		pNode->m_pBody = m_sample.createBox(pos,  PxVec3(0.1f,0.1f,0.1f), NULL, material, mass);
-		pNode->m_pBody->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, true);
-		pNode->m_IsKinematic = true;
-	}
+    if (!expr->meshFilePath.empty())
+    {
+        // Create body using custom mesh
+        bool isKinematic = false;
+        if (boost::iequals(expr->shape, "root")) { // Retain "root" behavior for kinematic
+            isKinematic = true;
+        } else {
+            isKinematic = (mass <= 0.0f);
+        }
+
+        // Use 'mass' as density if dynamic, otherwise default (will be ignored if kinematic)
+        PxReal density = (isKinematic || mass <= 0.0f) ? 1.0f : mass;
+                                                    // Note: Using mass directly as density might need tuning.
+                                                    // A small mass value might lead to very light objects if interpreted as density.
+                                                    // Consider a minimum density or a different mapping if this becomes an issue.
+
+        // 'dimension' PxVec3 is already calculated from expr->dimension, randShape, and dimensionRate.
+        // This will be used as the scale for the OBJ mesh.
+        pNode->m_pBody = m_sample.createMeshFromObj(
+            PxTransform(pos),                // Calculated position
+            expr->meshFilePath.c_str(),
+            dimension,                       // Use calculated dimension as scale
+            linVel,
+            material,                        // RenderMaterial
+            density,                         // Density for PhysX body
+            isKinematic,
+            &m_sample.getPhysics(),          // Pass CEvc's PxPhysics instance
+            &m_sample.getCooking()           // Pass CEvc's PxCooking instance
+        );
+        pNode->m_IsKinematic = isKinematic; // Store kinematic state
+    }
+    else
+    {
+        // Original logic for primitive shapes
+        if (boost::iequals(expr->shape, "box"))
+        {
+            pNode->m_pBody = m_sample.createBox(pos, dimension, linVel, material, mass);
+        }
+        else if (boost::iequals(expr->shape, "sphere"))
+        {
+            // For sphere, dimension.x is typically used as radius.
+            // createSphere takes radius, not PxVec3 dimension.
+            // The original code uses dimension.x for sphere's radius.
+            pNode->m_pBody = m_sample.createSphere(pos, dimension.x, linVel, material, mass);
+        }
+        else if (boost::iequals(expr->shape, "root"))
+        {
+            // Original root logic: fixed small box, kinematic.
+            // Dimension for root is hardcoded to PxVec3(0.1f,0.1f,0.1f) in original code,
+            // and 'dimension' var passed to createBox is this hardcoded value.
+            // Let's ensure this behavior is preserved if we are not using meshFilePath for root.
+            PxVec3 rootDimension = PxVec3(0.1f,0.1f,0.1f);
+            pNode->m_pBody = m_sample.createBox(pos, rootDimension, NULL, material, mass); // mass is likely 0 for root
+            if (pNode->m_pBody) { // Check if body creation was successful
+                 pNode->m_pBody->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, true);
+            }
+            pNode->m_IsKinematic = true;
+            dimension = rootDimension; // Update 'dimension' to reflect actual root size for pNode->m_Dimension
+        }
+        // else: No body created if shape is not recognized and no meshFilePath.
+        // This is existing behavior.
+    }
 
 	if (pNode->m_pBody)
 	{
